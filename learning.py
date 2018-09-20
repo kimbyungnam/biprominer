@@ -1,6 +1,6 @@
 from collections import Counter
 from time import sleep
-
+import sys
 
 #get rid of duplication
 def unduplication(packet):
@@ -9,8 +9,10 @@ def unduplication(packet):
     return nodup
 
 #combination of learning phase and labeling phase
-def learning_labeling(packet, freq, parameter, amount, block_size, fw):
+def learning_labeling(packet, freq, m_parameter, amount, block_size, fw, n_parameter):
     cell_list = []
+    r_parameter = (n_parameter*amount)/256
+    sys.stderr.write("r"+ str(r_parameter)+"\n")
     fw3 = open("E:/automobile_fuzzing/can_log/trace_txt/test.txt", 'w+')#file writings are just for testing
     while True:# loop until there is no more cell
         cell_len = len(cell_list)
@@ -18,27 +20,55 @@ def learning_labeling(packet, freq, parameter, amount, block_size, fw):
         #print str(len(packet)),
 
         for j in range(0,len(packet)):
+            packet_cell = []
+            sys.stderr.write("j1 "+ str(j)+"\t"+packet[j] + "\n")
             check = Counter(packet[j])
             labeled = check[' ']/block_size
             unlabeled = len(packet[j])/block_size - labeled# parameter h
 
             if unlabeled == 0: continue
 
-            threshold = amount/(parameter * unlabeled)
+            threshold = amount/(m_parameter * unlabeled)
             fw3.write(str(len(packet[j])) + "\t"+ str(len(packet[j])/block_size)+"\n")
 
             for i in range(0, len(packet[j]) / block_size):
                 if packet[j][i*block_size] == " ": continue
+                sys.stderr.write("i2 "+str(i)+"\t~"+packet[j][i*block_size:i*block_size+block_size]+"~\n")
+                sys.stderr.write(str(packet[j])+"\t~"+packet[j][i*block_size:i*block_size+block_size]+"~\n")
                 block = packet[j][i*block_size:i*block_size+block_size]
                 if freq[i][block] >= threshold:
+                    sys.stderr.write("3 "+str(freq[i][block])+"\t"+str(threshold)+"\t"+str(i)+"\n")
                     cell = {}
                     cell['START'] = i*block_size#start index
                     cell['END'] = i*block_size + block_size -1#end index
                     cell['value'] = block#cell value
-                    cell_list.append(cell)
-                    packet[j] = packet[j][0:i*block_size]+" " * block_size + packet[j][i*block_size + block_size:]
+                    #print i, cell['value'], "cell"
+                    #print packet[j],
+                    sys.stderr.write("4&&&\n")
+                    for t in range(i+1, len(packet[j])/block_size):
+                        sys.stderr.write("--5 " + packet[j][t*block_size:t*block_size+block_size] + "\t"+str(freq[t][packet[j][t*block_size:t*block_size+block_size]]) + " --\n")
+                        if freq[t][packet[j][t*block_size:t*block_size+block_size]] >= r_parameter:
+                            cell['END'] = t*block_size + block_size - 1
+                            cell['value'] += packet[j][t*block_size:t*block_size+block_size]
+                            sys.stderr.write(str(cell['END'])+"\n")
+                        else:
+                            break
 
+                    for t in range(i-1,-1, -1):
+                        sys.stderr.write("**6 "+packet[j][t*block_size:t*block_size+block_size] + "\t"+str(freq[t][packet[j][t*block_size:t*block_size+block_size]]) +  "**\n")
+                        if freq[t][packet[j][t*block_size:t*block_size+block_size]] >= r_parameter:
+                            cell['START'] = t*block_size
+                            cell['value'] = packet[j][t*block_size:t*block_size+block_size] + cell['value']
+                            sys.stderr.write("7 "+str(cell['START'])+"\n")
+                        else:
+                            break
+
+                    packet_cell.append(cell)
+                    cell_list.append(cell)
+                    packet[j] = packet[j][0:cell['START']]+ " "* len(cell['value']) + packet[j][cell['END']+1:]
+                    #print len(packet[j]), packet[j], "\n"
                     fw.write("START: "+str(cell['START'])+"\tEND: "+str(cell['END'])+"\tvalue: "+str(cell['value'])+"\n")
+                    sys.stderr.write("8 " +packet[j]+"\tdone\n"+str(cell['START'])+"\t"+str(cell['END'])+"\t"+str(cell['value'])+"\n")
 
         if cell_len == len(cell_list):# check there is new cell creation
             print "all done"
@@ -85,6 +115,7 @@ def frequency(packet, freq, block_size):#frequency checking
 #main
 fr = open("E:/automobile_fuzzing/can_log/trace_txt/trace.txt", 'r')
 id = {}
+parameter_n = 2
 parameter_m = 5
 block_size = 8  #1:bit 4:half-byte 8:byte
 freq = list()
@@ -107,8 +138,9 @@ while True:
     freq = frequency(data_field, freq, block_size)
 
 for seperate_id in id.keys():
+    sys.stderr.write(str(seperate_id) + "\n")
     nodup = list(set(id[seperate_id]))
     fw2 = open("E:/automobile_fuzzing/can_log/trace_txt/temp/"+seperate_id+".txt", 'w+')
     fw = open("E:/automobile_fuzzing/can_log/trace_txt/temp_cell/"+seperate_id+".txt", 'w+')
-    result = learning_labeling(nodup, freq, parameter_m,amount, block_size, fw)
+    result = learning_labeling(nodup, freq, parameter_m,amount, block_size, fw, parameter_n)
 
